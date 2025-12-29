@@ -34,16 +34,24 @@ body{margin:0;overflow:hidden;font-family:Arial,sans-serif;}
     background:#00ccff; color:black; border:none;
     border-radius:8px; cursor:pointer;
 }
+
+/* Touch joystick */
+#joystickBase{
+    position:fixed; bottom:100px; left:30px; width:120px; height:120px; 
+    background: rgba(255,255,255,0.2); border-radius:50%; touch-action:none; z-index:10;
+}
+#joystickThumb{
+    position:absolute; width:60px; height:60px; background: rgba(255,255,255,0.6);
+    border-radius:50%; top:30px; left:30px;
+}
 </style>
 </head>
 <body>
 
-<!-- Video background -->
 <video id="homeVideo" autoplay muted loop playsinline>
     <source src="homepage-video.mp4" type="video/mp4">
 </video>
 
-<!-- Home Screen -->
 <div id="homeScreen">
     <h1 style="font-size:3em; margin-bottom:0.5em;">Backrooms Horror Maze</h1>
     <p style="font-size:1.2em; margin-bottom:2em;">
@@ -53,11 +61,13 @@ body{margin:0;overflow:hidden;font-family:Arial,sans-serif;}
     <button id="startGame">START GAME</button>
 </div>
 
-<!-- UI and Controls -->
 <div id="ui">Collect all 8 orbs to unlock the exit!</div>
 <button id="pickup">PICK</button>
 <button id="sprintBtn">SPRINT</button>
 <audio id="scarySound" src="scary.mp3" loop></audio>
+
+<!-- Joystick -->
+<div id="joystickBase"><div id="joystickThumb"></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
 <script>
@@ -65,14 +75,9 @@ const homeScreen = document.getElementById("homeScreen");
 const homeVideo = document.getElementById("homeVideo");
 
 document.getElementById("startGame").addEventListener("click", () => {
-    // Remove the homepage elements completely
     homeScreen.remove();
-    homeVideo.remove();
-
-    // Stop the video
     homeVideo.pause();
-
-    // Start the maze/game
+    homeVideo.remove();
     initMaze();
 });
 
@@ -124,8 +129,8 @@ function addWall(x,z,w,d){
 // Outer walls (split right wall for exit)
 addWall(0,-25,50,1); addWall(0,25,50,1);
 addWall(-25,0,1,50); 
-addWall(25,15,1,30); // top
-addWall(25,-15,1,30); // bottom
+addWall(25,15,1,30);
+addWall(25,-15,1,30);
 
 // Inner maze walls
 addWall(-10,-15,10,1); addWall(10,-5,10,1); addWall(0,5,1,10);
@@ -209,15 +214,57 @@ window.addEventListener("keyup",e=>{keys[e.key.toLowerCase()]=false;if(e.key==="
 document.getElementById("sprintBtn").addEventListener("touchstart",()=>sprint=true);
 document.getElementById("sprintBtn").addEventListener("touchend",()=>sprint=false);
 
-// ---------- MOUSE LOOK ----------
-document.addEventListener("mousemove",e=>{
-  if(document.pointerLockElement){
-    yawObject.rotation.y -= e.movementX*0.002;
-    pitchObject.rotation.x -= e.movementY*0.002;
-    pitchObject.rotation.x=Math.max(-1.4,Math.min(1.4,pitchObject.rotation.x));
-  }
+// ---------- TOUCH JOYSTICK ----------
+const joystickBase = document.getElementById("joystickBase");
+const joystickThumb = document.getElementById("joystickThumb");
+let joystickActive = false;
+let joyX=0, joyY=0;
+
+joystickBase.addEventListener("touchstart", e=>{ joystickActive=true; }, {passive:false});
+joystickBase.addEventListener("touchmove", e=>{
+    e.preventDefault();
+    if(!joystickActive) return;
+    const touch = e.touches[0];
+    const rect = joystickBase.getBoundingClientRect();
+    joyX = Math.max(-1, Math.min(1, (touch.clientX - (rect.left+rect.width/2))/(rect.width/2)));
+    joyY = Math.max(-1, Math.min(1, (touch.clientY - (rect.top+rect.height/2))/(rect.height/2)));
+    joystickThumb.style.transform = `translate(${joyX*50}px, ${joyY*50}px)`;
+}, {passive:false});
+joystickBase.addEventListener("touchend", e=>{ joystickActive=false; joyX=0; joyY=0; joystickThumb.style.transform = `translate(0px,0px)`; }, {passive:false});
+
+// ---------- CAMERA LOOK ----------
+// Desktop Pointer Lock
+document.body.addEventListener("click", () => {
+    if(!("ontouchstart" in window)){
+        document.body.requestPointerLock();
+    }
 });
-document.body.addEventListener("click",()=>document.body.requestPointerLock());
+document.addEventListener("mousemove", e=>{
+    if(document.pointerLockElement){
+        yawObject.rotation.y -= e.movementX*0.002;
+        pitchObject.rotation.x -= e.movementY*0.002;
+        pitchObject.rotation.x=Math.max(-1.4,Math.min(1.4,pitchObject.rotation.x));
+    }
+});
+
+// Mobile Swipe Look
+let touchLookActive=false, lastTouchX=0, lastTouchY=0;
+document.addEventListener("touchstart", e=>{
+    if(e.touches[0].clientX > window.innerWidth/2){ 
+        touchLookActive=true; lastTouchX=e.touches[0].clientX; lastTouchY=e.touches[0].clientY;
+    }
+});
+document.addEventListener("touchmove", e=>{
+    if(!touchLookActive) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - lastTouchX;
+    const dy = touch.clientY - lastTouchY;
+    lastTouchX = touch.clientX; lastTouchY = touch.clientY;
+    yawObject.rotation.y -= dx * 0.002;
+    pitchObject.rotation.x -= dy * 0.002;
+    pitchObject.rotation.x = Math.max(-1.4, Math.min(1.4, pitchObject.rotation.x));
+});
+document.addEventListener("touchend", e=>{ touchLookActive=false; });
 
 // ---------- PICKUP ----------
 let collected=0; let shadowAngry=false;
@@ -252,14 +299,22 @@ function move(){
   let move = new THREE.Vector3();
   const forward = new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(0,yawObject.rotation.y,0));
   const right = new THREE.Vector3(1,0,0).applyEuler(new THREE.Euler(0,yawObject.rotation.y,0));
+
+  // Desktop input
   if(keys.w) move.add(forward);
   if(keys.s) move.add(forward.clone().negate());
   if(keys.a) move.add(right.clone().negate());
   if(keys.d) move.add(right);
 
-  const newPos = yawObject.position.clone().add(move.normalize().multiplyScalar(speed));
-  if(!collide(newPos)) yawObject.position.copy(newPos);
-  
+  // Mobile joystick input
+  move.add(forward.clone().multiplyScalar(-joyY));
+  move.add(right.clone().multiplyScalar(joyX));
+
+  if(move.length()>0){
+      const newPos = yawObject.position.clone().add(move.normalize().multiplyScalar(speed));
+      if(!collide(newPos)) yawObject.position.copy(newPos);
+  }
+
   playerBody.position.set(yawObject.position.x,0,yawObject.position.z);
   playerBody.rotation.y = yawObject.rotation.y;
 }
