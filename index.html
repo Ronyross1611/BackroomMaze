@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Backrooms Horror Maze</title>
+<style>
+body{margin:0;overflow:hidden;font-family:Arial,sans-serif;}
+#ui{position:fixed;top:10px;width:100%;text-align:center;color:white;z-index:10;}
+#pickup,#sprintBtn{position:fixed;width:80px;height:80px;border-radius:50%;color:white;font-weight:bold;z-index:10;}
+#pickup{bottom:30px;right:30px;background: rgba(255,60,60,0.9);}
+#sprintBtn{bottom:30px;left:30px;background: rgba(60,255,60,0.9);}
+
+/* Video Background */
+#homeVideo{
+    position:fixed; top:0; left:0;
+    width:100%; height:100%;
+    object-fit:cover;
+    z-index:1;
+}
+
+/* Home screen */
+#homeScreen{
+    position:fixed; top:0; left:0;
+    width:100%; height:100%;
+    display:flex; flex-direction:column;
+    justify-content:center; align-items:center;
+    z-index:2;
+    color:white; text-align:center;
+    background: rgba(0,0,0,0.4);
+}
+#startGame{
+    padding:1em 2em; font-size:1.5em;
+    background:#00ccff; color:black; border:none;
+    border-radius:8px; cursor:pointer;
+}
+</style>
+</head>
+<body>
+
+<!-- Video background -->
+<video id="homeVideo" autoplay muted loop playsinline>
+    <source src="homepage-video.mp4" type="video/mp4">
+</video>
+
+<!-- Home Screen -->
+<div id="homeScreen">
+    <h1 style="font-size:3em; margin-bottom:0.5em;">Backrooms Horror Maze</h1>
+    <p style="font-size:1.2em; margin-bottom:2em;">
+        Collect all 8 orbs to unlock the exit.<br>
+        Avoid the shadow and find your way out!
+    </p>
+    <button id="startGame">START GAME</button>
+</div>
+
+<!-- UI and Controls -->
+<div id="ui">Collect all 8 orbs to unlock the exit!</div>
+<button id="pickup">PICK</button>
+<button id="sprintBtn">SPRINT</button>
+<audio id="scarySound" src="scary.mp3" loop></audio>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+<script>
+const homeScreen = document.getElementById("homeScreen");
+const homeVideo = document.getElementById("homeVideo");
+
+document.getElementById("startGame").addEventListener("click", () => {
+    // Remove the homepage elements completely
+    homeScreen.remove();
+    homeVideo.remove();
+
+    // Stop the video
+    homeVideo.pause();
+
+    // Start the maze/game
+    initMaze();
+});
+
+function initMaze(){
+
+// ---------- SCENE ----------
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x020202,6,80);
+
+// ---------- CAMERA ----------
+const camera = new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,0.1,1000);
+const yawObject = new THREE.Object3D();
+const pitchObject = new THREE.Object3D();
+pitchObject.add(camera);
+yawObject.add(pitchObject);
+scene.add(yawObject);
+
+// ---------- RENDERER ----------
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.setClearColor(0x020202);
+document.body.appendChild(renderer.domElement);
+
+// ---------- LIGHT ----------
+scene.add(new THREE.AmbientLight(0x666666));
+const flashlight = new THREE.SpotLight(0xffffff,4,25,Math.PI/7,0.5);
+camera.add(flashlight);
+const targetObject = new THREE.Object3D();
+targetObject.position.set(0,0,-1);
+camera.add(targetObject);
+flashlight.target = targetObject;
+
+// ---------- FLOOR & CEILING ----------
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(50,50), new THREE.MeshStandardMaterial({color:0x333333}));
+floor.rotation.x=-Math.PI/2; scene.add(floor);
+const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(50,50), new THREE.MeshStandardMaterial({color:0x222222,emissive:0x111111,emissiveIntensity:0.15}));
+ceiling.position.y=3; ceiling.rotation.x=Math.PI/2; scene.add(ceiling);
+
+// ---------- MAZE WALLS ----------
+const wallMat = new THREE.MeshStandardMaterial({color:0xeeee88,emissive:0x999933,emissiveIntensity:0.2});
+const walls=[];
+function addWall(x,z,w,d){
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(w,3,d),wallMat);
+  wall.position.set(x,1.5,z);
+  scene.add(wall);
+  walls.push(wall);
+}
+
+// Outer walls (split right wall for exit)
+addWall(0,-25,50,1); addWall(0,25,50,1);
+addWall(-25,0,1,50); 
+addWall(25,15,1,30); // top
+addWall(25,-15,1,30); // bottom
+
+// Inner maze walls
+addWall(-10,-15,10,1); addWall(10,-5,10,1); addWall(0,5,1,10);
+addWall(-15,10,1,10); addWall(15,15,1,10); addWall(-5,20,10,1);
+addWall(-20,0,1,10); addWall(5,-20,10,1);
+addWall(-10,0,1,10); addWall(10,0,1,10); addWall(0,-10,10,1); addWall(0,10,10,1);
+
+// ---------- ORBS ----------
+let orbs = [];
+const numOrbs = 8;
+const orbRadius = 0.2;
+const minDistance = 4;
+function getRandomPosition(){
+  while(true){
+    const x = Math.random()*48 - 24;
+    const z = Math.random()*48 - 24;
+    const pos = new THREE.Vector3(x,1,z);
+
+    const orbBox = new THREE.Box3().setFromCenterAndSize(pos,new THREE.Vector3(orbRadius*2,orbRadius*2,orbRadius*2));
+    let insideWall = false;
+    for(const w of walls){
+      if(orbBox.intersectsBox(new THREE.Box3().setFromObject(w))){
+        insideWall = true; break;
+      }
+    }
+    if(insideWall) continue;
+
+    let tooClose = false;
+    for(const o of orbs){
+      if(pos.distanceTo(o.position) < minDistance){ tooClose=true; break; }
+    }
+    if(!tooClose) return pos;
+  }
+}
+
+for(let i=0;i<numOrbs;i++){
+  const pos = getRandomPosition();
+  const orb = new THREE.Mesh(
+    new THREE.SphereGeometry(orbRadius),
+    new THREE.MeshStandardMaterial({color:0xff0000,emissive:0xff4444,emissiveIntensity:2})
+  );
+  orb.position.copy(pos);
+  scene.add(orb);
+  orbs.push(orb);
+}
+
+// ---------- EXIT ----------
+const exit = new THREE.Mesh(
+  new THREE.BoxGeometry(1,3,2), 
+  new THREE.MeshStandardMaterial({color:0x00ffcc, emissive:0x00cccc, emissiveIntensity:2})
+);
+exit.position.set(25,1.5,-10);
+exit.visible = false;
+scene.add(exit);
+
+// ---------- PLAYER ----------
+const playerBody = new THREE.Group();
+const bodyMat = new THREE.MeshStandardMaterial({color:0x888888});
+const torso = new THREE.Mesh(new THREE.BoxGeometry(0.4,0.6,0.2),bodyMat); torso.position.y=1; playerBody.add(torso);
+const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.15,0.5,0.15),bodyMat); leftLeg.position.set(-0.1,0.25,0); playerBody.add(leftLeg);
+const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.15,0.5,0.15),bodyMat); rightLeg.position.set(0.1,0.25,0); playerBody.add(rightLeg);
+scene.add(playerBody);
+
+// ---------- SHADOW ----------
+const shadow = new THREE.Group();
+const sTorso = new THREE.Mesh(new THREE.BoxGeometry(0.5,1,0.3), new THREE.MeshStandardMaterial({color:0x000000,emissive:0x000000}));
+sTorso.position.y=1; shadow.add(sTorso);
+const sHead = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.3,0.3), new THREE.MeshStandardMaterial({color:0x000000,emissive:0x000000}));
+sHead.position.y=2; shadow.add(sHead);
+shadow.position.set(0,0,15);
+scene.add(shadow);
+
+// ---------- AUDIO ----------
+const scarySound = document.getElementById("scarySound");
+document.body.addEventListener("click", () => { scarySound.play().catch(()=>{}); }, {once:true});
+
+// ---------- INPUT ----------
+let keys={}, sprint=false;
+window.addEventListener("keydown",e=>{keys[e.key.toLowerCase()]=true;if(e.key==="Shift") sprint=true;});
+window.addEventListener("keyup",e=>{keys[e.key.toLowerCase()]=false;if(e.key==="Shift") sprint=false;});
+document.getElementById("sprintBtn").addEventListener("touchstart",()=>sprint=true);
+document.getElementById("sprintBtn").addEventListener("touchend",()=>sprint=false);
+
+// ---------- MOUSE LOOK ----------
+document.addEventListener("mousemove",e=>{
+  if(document.pointerLockElement){
+    yawObject.rotation.y -= e.movementX*0.002;
+    pitchObject.rotation.x -= e.movementY*0.002;
+    pitchObject.rotation.x=Math.max(-1.4,Math.min(1.4,pitchObject.rotation.x));
+  }
+});
+document.body.addEventListener("click",()=>document.body.requestPointerLock());
+
+// ---------- PICKUP ----------
+let collected=0; let shadowAngry=false;
+function pickup(){ 
+  orbs=orbs.filter(o=>{
+    if(yawObject.position.distanceTo(o.position)<2){
+      scene.remove(o); collected++;
+      document.getElementById("ui").innerText=collected===numOrbs?"EXIT UNLOCKED — FIND IT!":`Orb ${collected}/${numOrbs}`;
+      if(collected===numOrbs){ 
+          shadowAngry=true; 
+          exit.visible = true; 
+          exit.material.emissiveIntensity = 4; 
+      }
+      return false;
+    }
+    return true;
+  });
+}
+document.getElementById("pickup").onclick=pickup;
+window.addEventListener("keydown",e=>{if(e.key==="f") pickup();});
+
+// ---------- COLLISION ----------
+function collide(pos){
+  const playerBox=new THREE.Box3().setFromCenterAndSize(pos,new THREE.Vector3(0.5,1.6,0.5));
+  for(const w of walls){if(playerBox.intersectsBox(new THREE.Box3().setFromObject(w))) return true;}
+  return false;
+}
+
+// ---------- PLAYER MOVE ----------
+function move(){
+  const speed = sprint?0.12:0.06;
+  let move = new THREE.Vector3();
+  const forward = new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(0,yawObject.rotation.y,0));
+  const right = new THREE.Vector3(1,0,0).applyEuler(new THREE.Euler(0,yawObject.rotation.y,0));
+  if(keys.w) move.add(forward);
+  if(keys.s) move.add(forward.clone().negate());
+  if(keys.a) move.add(right.clone().negate());
+  if(keys.d) move.add(right);
+
+  const newPos = yawObject.position.clone().add(move.normalize().multiplyScalar(speed));
+  if(!collide(newPos)) yawObject.position.copy(newPos);
+  
+  playerBody.position.set(yawObject.position.x,0,yawObject.position.z);
+  playerBody.rotation.y = yawObject.rotation.y;
+}
+
+// ---------- SHADOW AI ----------
+function enemyAI(){
+  const dir = yawObject.position.clone().sub(shadow.position);
+  const distance = dir.length();
+  const speed = shadowAngry ? 0.12 : (distance<12?0.08:0.04);
+  if(distance>0.1){dir.normalize(); 
+      const newPos = shadow.position.clone().add(dir.multiplyScalar(speed));
+      if(!collide(newPos)) shadow.position.copy(newPos);
+  }
+  shadow.position.y=0;
+  shadow.lookAt(yawObject.position);
+  scarySound.volume = Math.max(0, Math.min(1, 2 - distance*0.08));
+
+  const playerBox=new THREE.Box3().setFromCenterAndSize(yawObject.position,new THREE.Vector3(0.5,1.6,0.5));
+  const shadowBox=new THREE.Box3().setFromCenterAndSize(shadow.position.clone().add(new THREE.Vector3(0,1,0)),new THREE.Vector3(0.5,2,0.5));
+  if(playerBox.intersectsBox(shadowBox)){alert("YOU WERE CAUGHT"); location.reload();}
+}
+
+// ---------- EXIT CHECK ----------
+function checkExit(){
+  if(collected===numOrbs && yawObject.position.distanceTo(exit.position)<2){alert("YOU ESCAPED!"); location.reload();}
+}
+
+// ---------- PLAYER START ----------
+yawObject.position.set(-20,1.6,-20);
+playerBody.position.set(-20,0,-20);
+
+// ---------- LOOP ----------
+function animate(){
+    requestAnimationFrame(animate);
+    move();
+    enemyAI();
+    checkExit();
+    renderer.render(scene,camera);
+}
+animate();
+
+// ---------- RESIZE ----------
+window.addEventListener("resize",()=>{camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth,window.innerHeight);});
+
+} // end initMaze
+</script>
+</body>
+</html>
