@@ -148,20 +148,12 @@ function getRandomPosition(){
     const x = Math.random()*48 - 24;
     const z = Math.random()*48 - 24;
     const pos = new THREE.Vector3(x,1,z);
-
     const orbBox = new THREE.Box3().setFromCenterAndSize(pos,new THREE.Vector3(orbRadius*2,orbRadius*2,orbRadius*2));
     let insideWall = false;
-    for(const w of walls){
-      if(orbBox.intersectsBox(new THREE.Box3().setFromObject(w))){
-        insideWall = true; break;
-      }
-    }
+    for(const w of walls){ if(orbBox.intersectsBox(new THREE.Box3().setFromObject(w))){ insideWall=true; break; } }
     if(insideWall) continue;
-
     let tooClose = false;
-    for(const o of orbs){
-      if(pos.distanceTo(o.position) < minDistance){ tooClose=true; break; }
-    }
+    for(const o of orbs){ if(pos.distanceTo(o.position)<minDistance){ tooClose=true; break; } }
     if(!tooClose) return pos;
   }
 }
@@ -214,30 +206,60 @@ window.addEventListener("keyup",e=>{keys[e.key.toLowerCase()]=false;if(e.key==="
 document.getElementById("sprintBtn").addEventListener("touchstart",()=>sprint=true);
 document.getElementById("sprintBtn").addEventListener("touchend",()=>sprint=false);
 
-// ---------- TOUCH JOYSTICK ----------
+// ---------- MULTI-TOUCH SUPPORT ----------
 const joystickBase = document.getElementById("joystickBase");
 const joystickThumb = document.getElementById("joystickThumb");
-let joystickActive = false;
+let joystickTouchId = null;
+let lookTouchId = null;
 let joyX=0, joyY=0;
+let lastTouchX=0, lastTouchY=0;
 
-joystickBase.addEventListener("touchstart", e=>{ joystickActive=true; }, {passive:false});
-joystickBase.addEventListener("touchmove", e=>{
-    e.preventDefault();
-    if(!joystickActive) return;
-    const touch = e.touches[0];
-    const rect = joystickBase.getBoundingClientRect();
-    joyX = Math.max(-1, Math.min(1, (touch.clientX - (rect.left+rect.width/2))/(rect.width/2)));
-    joyY = Math.max(-1, Math.min(1, (touch.clientY - (rect.top+rect.height/2))/(rect.height/2)));
-    joystickThumb.style.transform = `translate(${joyX*50}px, ${joyY*50}px)`;
-}, {passive:false});
-joystickBase.addEventListener("touchend", e=>{ joystickActive=false; joyX=0; joyY=0; joystickThumb.style.transform = `translate(0px,0px)`; }, {passive:false});
-
-// ---------- CAMERA LOOK ----------
-// Desktop Pointer Lock
-document.body.addEventListener("click", () => {
-    if(!("ontouchstart" in window)){
-        document.body.requestPointerLock();
+// Touch start
+document.addEventListener("touchstart", e=>{
+    for(const touch of e.changedTouches){
+        if(touch.clientX < window.innerWidth/2 && joystickTouchId === null){
+            joystickTouchId = touch.identifier;
+        } else if(touch.clientX >= window.innerWidth/2 && lookTouchId === null){
+            lookTouchId = touch.identifier;
+            lastTouchX = touch.clientX; lastTouchY = touch.clientY;
+        }
     }
+}, {passive:false});
+
+// Touch move
+document.addEventListener("touchmove", e=>{
+    for(const touch of e.changedTouches){
+        if(touch.identifier === joystickTouchId){
+            const rect = joystickBase.getBoundingClientRect();
+            joyX = Math.max(-1, Math.min(1, (touch.clientX - (rect.left+rect.width/2))/(rect.width/2)));
+            joyY = Math.max(-1, Math.min(1, (touch.clientY - (rect.top+rect.height/2))/(rect.height/2)));
+            joystickThumb.style.transform = `translate(${joyX*50}px, ${joyY*50}px)`;
+        } else if(touch.identifier === lookTouchId){
+            const dx = touch.clientX - lastTouchX;
+            const dy = touch.clientY - lastTouchY;
+            lastTouchX = touch.clientX; lastTouchY = touch.clientY;
+            yawObject.rotation.y -= dx * 0.002;
+            pitchObject.rotation.x -= dy * 0.002;
+            pitchObject.rotation.x = Math.max(-1.4, Math.min(1.4, pitchObject.rotation.x));
+        }
+    }
+}, {passive:false});
+
+// Touch end
+document.addEventListener("touchend", e=>{
+    for(const touch of e.changedTouches){
+        if(touch.identifier === joystickTouchId){
+            joystickTouchId = null; joyX=0; joyY=0;
+            joystickThumb.style.transform = `translate(0px,0px)`;
+        } else if(touch.identifier === lookTouchId){
+            lookTouchId = null;
+        }
+    }
+}, {passive:false});
+
+// ---------- POINTER LOCK FOR DESKTOP ----------
+document.body.addEventListener("click", () => {
+    if(!("ontouchstart" in window)) document.body.requestPointerLock();
 });
 document.addEventListener("mousemove", e=>{
     if(document.pointerLockElement){
@@ -246,25 +268,6 @@ document.addEventListener("mousemove", e=>{
         pitchObject.rotation.x=Math.max(-1.4,Math.min(1.4,pitchObject.rotation.x));
     }
 });
-
-// Mobile Swipe Look
-let touchLookActive=false, lastTouchX=0, lastTouchY=0;
-document.addEventListener("touchstart", e=>{
-    if(e.touches[0].clientX > window.innerWidth/2){ 
-        touchLookActive=true; lastTouchX=e.touches[0].clientX; lastTouchY=e.touches[0].clientY;
-    }
-});
-document.addEventListener("touchmove", e=>{
-    if(!touchLookActive) return;
-    const touch = e.touches[0];
-    const dx = touch.clientX - lastTouchX;
-    const dy = touch.clientY - lastTouchY;
-    lastTouchX = touch.clientX; lastTouchY = touch.clientY;
-    yawObject.rotation.y -= dx * 0.002;
-    pitchObject.rotation.x -= dy * 0.002;
-    pitchObject.rotation.x = Math.max(-1.4, Math.min(1.4, pitchObject.rotation.x));
-});
-document.addEventListener("touchend", e=>{ touchLookActive=false; });
 
 // ---------- PICKUP ----------
 let collected=0; let shadowAngry=false;
